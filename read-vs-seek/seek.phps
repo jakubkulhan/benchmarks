@@ -1,5 +1,5 @@
 <?php
-require_once 'common.phps';
+require_once dirname(__FILE__) . '/common.phps';
 
 $start = -microtime(true);
 for ($i = 0, $N = SIZE / RECORD_SIZE; $i < $N; $i++) {

@@ -1,5 +1,5 @@
 <?php
-require_once 'common.phps';
+require_once dirname(__FILE__) . '/common.phps';
 header('Content-Type: text/plain; charset=UTF-8');
 ?>
 
@@ -7,7 +7,7 @@ Benchmark: string concatenation vs. implode()
 ---------------------------------------------
 <?php
 echo "concat:  ";
-require_once 'concat.phps';
+require_once dirname(__FILE__) . '/concat.phps';
 
 echo "implode: ";
-require_once 'implode.phps';
+require_once dirname(__FILE__) . '/implode.phps';

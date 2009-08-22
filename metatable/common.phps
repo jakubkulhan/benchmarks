@@ -1,5 +1,5 @@
 <?php
-require_once 'metatable.php';
+require_once dirname(__FILE__) . '/metatable.php';
 define('N', 2000);
 define('SQUARES_FILE', 'squares.metatable');
 define('STRINGS_FILE', 'strings.metatable');

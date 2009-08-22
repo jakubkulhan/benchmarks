@@ -1,5 +1,5 @@
 <?php
-require_once 'common.phps';
+require_once dirname(__FILE__) . '/common.phps';
 
 if (!($table = metatable::open(STRINGS_FILE))) {
     die('cannot open metatable');

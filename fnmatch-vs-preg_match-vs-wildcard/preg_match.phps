@@ -1,4 +1,6 @@
 <?php
+require_once dirname(__FILE__) . '/common.phps';
+
 $start = -microtime(true);
 
 $regex = '~' . str_replace('\*', '.+', preg_quote(TEST_PATTERN)) . '~';
