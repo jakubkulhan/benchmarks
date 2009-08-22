@@ -23,10 +23,6 @@ foreach ($table->get('*', '*') as $k => $v) {
     dummy($k, $v);
 }
 
-for ($i = 0; $i < N; $i++) {
-    $got = $table->get((string) $i, 'value');
-}
-
 echo 'time: ';
 var_dump(microtime(true) + $start);
 echo 'mem: ';

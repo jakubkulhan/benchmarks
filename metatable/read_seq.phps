@@ -7,12 +7,9 @@ if (!($table = metatable::open(SQUARES_FILE, metatable::READONLY))) {
     die('cannot open metatable');
 }
 
-for ($i = N, $ciphres = strlen((string) N); $i > 0; --$i) {
-    $k = sprintf('%0' . $ciphres . 'd', $i);
-    $got = $table->get($k, 'value');
-    assert($got[$k]['value'] === $i * $i);
+foreach ($table->get('*', '*') as $k => $v) {
+    dummy($k, $v);
 }
-
 
 echo 'time: ';
 var_dump(microtime(true) + $start);

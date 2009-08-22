@@ -17,3 +17,5 @@ echo 'time: ';
 var_dump(microtime(true) + $start);
 echo 'mem: ';
 var_dump(memory_get_peak_usage());
+
+unset($table);

@@ -83,6 +83,11 @@ final class metatable implements metatableable
     const AUTOCLOSE = 8;
 
     /**
+     * Temporary copy will be in memory
+     */
+    const INMEMORY = 16;
+
+    /**
      * Size of integer
      */
     const SIZEOF_INT = 4;
