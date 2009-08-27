@@ -37,21 +37,27 @@ final class btree
     const NODECHACHE_SIZE = 64;
 
     /**
-     * BTree file handle
+     * @var resource BTree file handle
      */
     private $handle;
 
     /**
-     * Node cache
+     * @var string BTree filename
      */
-    private $nodecache;
+    private $filename;
+
+    /**
+     * @var array Node cache
+     */
+    private $nodecache = array();
 
     /**
      * Use static method open() to get instance
      */
-    private function __construct($handle)
+    private function __construct($handle, $filename)
     {
         $this->handle = $handle;
+        $this->filename = $filename;
     }
 
     /**
@@ -136,7 +142,7 @@ final class btree
                 array_push($lookup, $upnode);
             }
 
-            ksort($node);
+            ksort($node, SORT_STRING);
             if (count($node) <= self::NODE_SLOTS) $nodes = array($node);
             else $nodes = array_chunk($node, ceil(count($node) / ceil(count($node) / self::NODE_SLOTS)), TRUE);
 
@@ -194,35 +200,156 @@ final class btree
     {
         if ($node_type === NULL || $node === NULL) list($node_type, $node) = $this->root();
         if ($node_type === NULL || $node === NULL) return array(NULL);
-        return array_merge(array($node), $this->{'lookup' . $node_type}($key, $node));
+        $ret = array();
+
+        do {
+            array_push($ret, $node);
+            if ($node_type === self::KVNODE) $node = NULL;
+            else {
+                $keys = array_keys($node);
+                $l = 0;
+                $r = count($keys);
+
+                while ($l < $r) {
+                    $i = $l + intval(($r - $l) / 2);
+                    if (strcmp($keys[$i], $key) < 0) $l = $i + 1;
+                    else $r = $i;
+                }
+
+                $l = max(0, $l + ($l >= count($keys) ? -1 : (strcmp($keys[$l], $key) <= 0 ? 0 : -1)));
+
+                list($node_type, $node) = $this->node($node[$keys[$l]]);
+                if ($node_type === NULL || $node === NULL) return array(NULL);
+            }
+
+        } while ($node !== NULL);
+
+        return $ret;
     }
 
-    private function lookupkv($key, $node)
+    /**
+     * Get positions of all leaves
+     * @return array pointers to leaves; NULL on failure
+     */
+    public function leaves()
     {
-        return array();
+        if (($root = $this->roothunt()) === NULL) return NULL;
+        return $this->leafhunt($root);
     }
 
-    private function lookupkp($key, $node)
+    /**
+     * Find positions of all leaves
+     * @param int pointer to node
+     * @return array pairs of (leaf, pointer); NULL on failure
+     */
+    private function leafhunt($p)
     {
-        $keys = array_keys($node);
-        $l = 0;
-        $r = count($keys);
+        list($node_type, $node) = $this->node($p);
+        if ($node_type === NULL || $node === NULL) return NULL;
+        $nodes = array(array($node_type, $node, $p));
+        $ret = array();
 
-        while ($l < $r) {
-            $i = $l + intval(($r - $l) / 2);
-            if (strcmp($keys[$i], $key) < 0) $l = $i + 1;
-            else $r = $i;
+        do {
+            $new_nodes = array();
+            foreach ($nodes as $_) {
+                list($node_type, $node, $p) = $_;
+                if ($node_type === self::KVNODE) $ret[current(array_keys($node))] = $p;
+                else {
+                    foreach ($node as $i) {
+                        list($child_type, $child) = $this->node($i);
+                        if ($child_type === NULL || $child === NULL) return NULL;
+
+                        if ($child_type === self::KVNODE) $ret[current(array_keys($child))] = $i;
+                        else $new_nodes[] = array($child_type, $child, $i);
+                    }
+                }
+            }
+            $nodes = $new_nodes;
+
+        } while (count($nodes) > 1);
+
+        return $ret;
+    }
+
+    /**
+     * Remove old nodes from BTree file
+     * @return bool TRUE if everything went well; FALSE otherwise
+     */
+    public function compact()
+    {
+        // I believe in uniqid(), so no checking if file already exists and locking
+        $compact_filename = uniqid($this->filename . '~', TRUE);
+        if (!($compact = fopen($compact_filename, 'a+b'))) return FALSE;
+
+        if (!((
+            fseek($compact, 0, SEEK_END) !== -1 &&
+            $root = $this->copyto($compact)) !== NULL && 
+            self::header($compact, $root) !== FALSE && 
+            fflush($compact) && 
+            @rename($compact_filename, $this->filename) /* will not work under windows, sorry */
+        ))
+        {
+            fclose($compact);
+            @unlink($compact_filename);
+            return FALSE;
         }
 
-        $l = max(0, $l + ($l >= count($keys) ? -1 : (strcmp($keys[$l], $key) <= 0 ? 0 : -1)));
+        $this->nodecache = array();
+        fclose($this->handle);
+        $this->handle = $compact;
+        return TRUE;
+    }
 
-        list($child_type, $child) = $this->node($node[$keys[$l]]);
-        if ($child_type === NULL || $child === NULL) return NULL;
+    /**
+     * Copy node from opened file to another
+     * @param resource
+     * @param string
+     * @param array
+     * @return int new pointer to copied node; 
+     */
+    private function copyto($to, $node_type = NULL, $node = NULL)
+    {
+        if ($node_type === NULL || $node === NULL) list($node_type, $node) = $this->root();
+        if ($node_type === NULL || $node === NULL) return NULL;
+        if ($node_type === self::KPNODE) 
+            foreach ($node as $k => $v) $node[$k] = array($v);
+        $stack = array(array($node_type, $node));
 
-        $children = $this->lookup($key, $child_type, $child);
-        if ($children === NULL) return NULL;
+        do {
+            list($node_type, $node) = array_pop($stack);
+            if ($node_type === self::KPNODE) {
+                $pushed = FALSE;
+                foreach ($node as $i) {
+                    if (is_array($i)) {
+                        list($child_type, $child) = $this->node($i[0]);
+                        if ($child_type === NULL || $child === NULL) return NULL;
+                        if ($child_type === self::KPNODE) 
+                            foreach ($child as $k => $v) $child[$k] = array($v);
 
-        return $children;
+                        array_push($stack, array($node_type, $node));
+                        array_push($stack, array($child_type, $child));
+                        $pushed = TRUE;
+                        break;
+                    }
+                }
+
+                if ($pushed) continue;
+            }
+
+            if (!empty($stack)) list($upnode_type, $upnode) = array_pop($stack);
+            else list($upnode_type, $upnode) = array(NULL, array());
+
+            $serialized = self::serialize($node_type, $node);
+            $to_write = pack('N', strlen($serialized)) . $serialized;
+            if (($p = ftell($to)) === FALSE) return NULL;
+            if (fwrite($to, $to_write, strlen($to_write)) !== strlen($to_write)) return NULL;
+
+            $upnode[current(array_keys($node))] = $p;
+            if (!(empty($stack) && $upnode_type === NULL)) array_push($stack, array($upnode_type, $upnode));
+
+        } while (!empty($stack));
+
+        return $p;
     }
 
     /**
@@ -231,12 +358,22 @@ final class btree
      */
     private function root()
     {
+        if (($p = $this->roothunt()) === NULL) return array(NULL, NULL);
+        return $this->node($p);
+    }
+
+    /**
+     * Try to get position of root
+     * @return int pointer to root; NULL on failure
+     */
+    private function roothunt()
+    {
         // try EOF
         if (fseek($this->handle, -(self::SIZEOF_HEADER + self::SIZEOF_INT), SEEK_END) 
-            === -1) return array(NULL, NULL);
+            === -1) return NULL;
 
         if (strlen($data = fread($this->handle, self::SIZEOF_INT + self::SIZEOF_HEADER)) 
-            !== self::SIZEOF_INT + self::SIZEOF_HEADER) return array(NULL, NULL);
+            !== self::SIZEOF_INT + self::SIZEOF_HEADER) return NULL;
 
         $header = substr($data, self::SIZEOF_INT);
         $root = substr($data, 0, self::SIZEOF_INT);
@@ -245,9 +382,9 @@ final class btree
         if (substr($data, self::SIZEOF_INT) !== self::HEADER) {
             $root = NULL;
 
-            if (($size = ftell($this->handle)) === FALSE) return array(NULL, NULL);
+            if (($size = ftell($this->handle)) === FALSE) return NULL;
             for ($i = -1; ($off = $i * 128) + $size > 128; --$i) {
-                if (fseek($this->handle, $off, SEEK_END) === -1) return array(NULL, NULL);
+                if (fseek($this->handle, $off, SEEK_END) === -1) return NULL;
                 $data = fread($this->handle, 256);
                 if (($pos = strrpos($data, self::HEADER)) !== FALSE) {
                     if ($pos === 0) continue;
@@ -256,12 +393,12 @@ final class btree
                 }
             }
 
-            if ($root === NULL) return array(NULL, NULL);
+            if ($root === NULL) return NULL;
         }
 
-        // get root node
+        // unpack root pointer
         list(,$p) = unpack('N', $root);
-        return $this->node($p);
+        return $p;
     }
 
     /**
@@ -269,7 +406,7 @@ final class btree
      * @param int pointer to node (offset in file)
      * @retrun array 0 => node type, 1 => node; array(NULL, NULL) on failure
      */
-    private function node($p)
+    public function node($p)
     {
         if (!isset($this->nodecache[$p])) {
             if (fseek($this->handle, $p, SEEK_SET) === -1) return array(NULL, NULL);
@@ -289,9 +426,10 @@ final class btree
     /**
      * Open/create new btree
      */
-    public static function open($file)
+    public static function open($filename)
     {
-        if (!($handle = @fopen($file, 'a+b'))) return FALSE;
+        if (!($handle = @fopen($filename, 'a+b'))) return FALSE;
+        if (($filename = realpath($filename)) === FALSE) return FALSE;
 
         // write default node if neccessary
         if (fseek($handle, 0, SEEK_END) === -1) {
@@ -315,7 +453,7 @@ final class btree
         }
 
         // create instance
-        return new self($handle);
+        return new self($handle, $filename);
     }
 
     /**
