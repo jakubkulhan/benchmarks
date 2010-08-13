@@ -12,11 +12,17 @@ require dirname(__FILE__) . '/array_push.phps';
 echo "[] push:          ";
 require dirname(__FILE__) . '/brackets_push.phps';
 
+echo "sp push:          ";
+require dirname(__FILE__) . '/sp_push.phps';
+
 echo "array_pop:        ";
 require dirname(__FILE__) . '/array_pop.phps';
 
 echo "[] pop:           ";
 require dirname(__FILE__) . '/brackets_pop.phps';
+
+echo "sp pop:           ";
+require dirname(__FILE__) . '/sp_pop.phps';
 
 echo "array_splice pop: ";
 require dirname(__FILE__) . '/array_splice.phps';
