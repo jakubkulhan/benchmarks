@@ -1,9 +1,9 @@
 <?php
 require_once dirname(__FILE__) . '/common.phps';
 
-$array = str_split($str);
-
 $start = -microtime(true);
+
+$array = str_split($str);
 
 for ($i = 0; $i < N; ++$i) {
     foreach ($array as $j) {
